@@ -72,11 +72,14 @@ local function discovery(index)
     {p = 'sensor', name = 'Paramètre principal (brut)', stat_cla = 'measurement', ent_cat = 'diagnostic'}, false)
   cmps.rssi_raw = component(id, 'rssi_raw', {p = 'sensor', name = 'Signal radio', unit = 'dBm',
     dev_cla = 'signal_strength', stat_cla = 'measurement', ent_cat = 'diagnostic'}, false)
+  for _, cmp in pairs(cmps) do
+    -- Allow for one optional read already in flight, two MAIN_INFO reads and two PUBACKs.
+    cmp.exp_aft = config.interval_seconds + 45
+  end
   return json.encode({
     dev = {ids = {id}, name = 'Cozytouch ' .. label, mf = 'Atlantic'}, o = {name = 'cozytouch-hub'},
     stat_t = config.state_topics[index], avty_t = config.topic_prefix .. '/availability',
-    -- Allow for one optional read already in flight, two MAIN_INFO reads and two PUBACKs.
-    exp_aft = config.interval_seconds + 45, cmps = cmps
+    cmps = cmps
   })
 end
 

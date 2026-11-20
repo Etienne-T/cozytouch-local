@@ -887,10 +887,15 @@ with tempfile.TemporaryDirectory(prefix="ctq2-") as temporary:
                         assert all(len(config.encode()) <= 6144 for config in raw_configs)
                         # client_id is ASCII (up to 48 bytes); exp_aft grows from 75 to 3645.
                         expiration = interval + 45
-                        assert all(config["exp_aft"] == expiration for config in configs)
+                        assert all("exp_aft" not in config for config in configs)
+                        assert all(component["exp_aft"] == expiration
+                                   for config in configs for component in config["cmps"].values())
                         expiration_growth = len(str(3645)) - len(str(expiration))
-                        largest_configs = [len(config.replace(client_id, "x" * 48).encode()) + expiration_growth
-                                           for config in raw_configs]
+                        largest_configs = [
+                            len(raw.replace(client_id, "x" * 48).encode())
+                            + len(config["cmps"]) * expiration_growth
+                            for raw, config in zip(raw_configs, configs)
+                        ]
                         assert max(largest_configs) <= 6144, largest_configs
                         # v3 corrections (maj-lan-3): V40 raw index, Wh counters, IC3 timers and boost setting.
                         cmps = {config["stat_t"]: config["cmps"] for config in configs}

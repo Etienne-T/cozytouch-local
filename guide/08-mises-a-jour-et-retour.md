@@ -2,7 +2,9 @@
 
 ## Changer uniquement l’application
 
-Le 20 novembre 2026, le dernier essai consigné en banque A a promu l’application v5 `v-a581179dd120` (`ct-20261120e.ctapp`). L’état relevé indiquait la v4 `v-1b3e4c30f96c` comme version précédente. [Rapport v5](../analyse-2026-11-20/maj-lan-5/RAPPORT.md)
+Le 20 novembre 2026, la mise à jour en banque A a promu l’application v6 `v-f871bf800c8a` (`ct-20261120f.ctapp`). Cette version est active. La v5 `v-a581179dd120` est la version précédente. [Rapport v6](../analyse-2026-11-20/maj-lan-6/RAPPORT.md)
+
+Le 20 novembre 2026, la présence des deux appareils Cozytouch dans Home Assistant a été vérifiée après le passage à la v6. Jusqu’à la v5, Home Assistant refusait la découverte MQTT.
 
 1. Vérifiez la santé de A et notez la version avec `ct-update status` dans votre session SSH. Préparez l’archive .ctapp correspondant au service. Sous Windows, préparez une copie du lanceur de déploiement avec l’adresse `<IP_HUB>`, votre fichier de clé privée `<FICHIER_CLE>` et le fichier de clés d’hôte connues `<FICHIER_HOTES>`. Conservez la vérification stricte.
 2. Utilisez cette copie avec `-Archive "<ARCHIVE_CTAPP>"` sans demander de redémarrage. Contrôlez UPDATE_STAGED et la version next. Si la version diffère, arrêtez.
