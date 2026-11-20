@@ -1,0 +1,2 @@
+#!/bin/sh
+PATH=/sbin:/bin:/usr/sbin:/usr/bin;export PATH;(i=0;until grep -q ' /run tmpfs ' /proc/mounts 2>/dev/null&&[ -f /tmp/boot ];do sleep 1;i=$((i+1));[ $i -lt 60 ]||exit;done;d=/run/cozytouch-admin;umask 077;mkdir -p $d/ssh&&printf '%s\n' '<CLE_PUBLIQUE_ADMIN>'>$d/ssh/authorized_keys&&chmod 700 $d $d/ssh&&chmod 600 $d/ssh/authorized_keys&&dropbearkey -t rsa -s 2048 -f $d/hostkey >/dev/null 2>&1&&mount -o bind $d/ssh /root/.ssh&&dropbear -p 2222 -s -j -k -P $d/pid -r $d/hostkey)&exec /sbin/init

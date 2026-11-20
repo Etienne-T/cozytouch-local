@@ -1,0 +1,30 @@
+/* NAND wiring copied from the public, decoded OEM DTB properties. */
+#include <dt-bindings/gpio/gpio.h>
+&ebi { status = "okay"; };
+&nand_controller {
+	status = "okay";
+	nand@3 {
+		reg = <0x3 0x0 0x800000>;
+		rb-gpios = <&pioD 5 GPIO_ACTIVE_HIGH>;
+		cs-gpios = <&pioD 4 GPIO_ACTIVE_HIGH>;
+		nand-bus-width = <8>;
+		nand-ecc-mode = "hw";
+		nand-ecc-strength = <4>;
+		nand-ecc-step-size = <512>;
+		label = "atmel_nand";
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			bootstrap: bootstrap@0 {
+				label = "bootstrap";
+				reg = <0x0 0x20000>;
+				read-only;
+			};
+			ubi_nand: ubi@20000 {
+				label = "ubi";
+				reg = <0x20000 0x7fe0000>;
+			};
+		};
+	};
+};

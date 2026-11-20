@@ -1,0 +1,43 @@
+#!/bin/sh
+set -u
+child=
+stopping=0
+stop() {
+    stopping=1
+    [ -z "$child" ] || kill -TERM "$child" 2>/dev/null || true
+}
+trap stop TERM INT
+# Only execution failures before Lua can acquire the UART are retryable.
+# An initialization, radio, broker or ACK error holds this boot for review.
+for attempt in 1 2 3; do
+    [ "$stopping" -eq 0 ] || break
+    printf 'SERVICE_LAUNCH attempt=%s\n' "$attempt"
+    luajit "${CT_APP_DIR:-/usr/share/cozytouch/phase2}/service.lua" --run &
+    child=$!
+    wait "$child"
+    rc=$?
+    if [ "$stopping" -ne 0 ]; then
+        wait "$child" 2>/dev/null || true
+        child=
+        break
+    fi
+    child=
+    case "$rc" in
+        126|127) [ "$attempt" -eq 3 ] || sleep 2 ;;
+        *) break ;;
+    esac
+done
+# A failed application version on trial is dropped and the hub restarts once on the
+# current version (approved by <PERSONNE>, 19 November 2026). Otherwise: hold, no reboot.
+if [ "$stopping" -eq 0 ] && [ "$(cat /run/ct/app-mode 2>/dev/null)" = trial ]; then
+    /usr/libexec/ct/ct-update abandon
+fi
+printf '%s\n' 'SUPERVISOR_HOLD no_automatic_reboot'
+# Red status LED while held (advisory; absent LED class is ignored).
+for setting in green:0 red:255; do
+    led=/sys/class/leds/pwm:${setting%%:*}:user
+    if [ -d "$led" ]; then
+        { printf 'none\n' > "$led/trigger" && printf '%s\n' "${setting#*:}" > "$led/brightness"; } 2>/dev/null || true
+    fi
+done
+while :; do sleep 60 & wait "$!"; done

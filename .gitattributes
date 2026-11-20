@@ -1,0 +1,3 @@
+# Conserver les octets des pi?ces historiques et des sources.
+* -text -filter -working-tree-encoding -ident
+*.pdf binary

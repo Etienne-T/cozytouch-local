@@ -1,0 +1,28 @@
+/* Status LED, wired as in the OEM DTB (analyse-2026-11-19/led-etat/RAPPORT.md):
+ * green = PWM0 channel 0 on PC10, red = PWM0 channel 1 on PC11, both peripheral C.
+ * PC20 (blue, disabled by the OEM) is not claimed. Orange = red + green at 100 %.
+ * default-state "on" keeps the OEM boot meaning (orange) until the service takes over.
+ * The OEM "default-on" trigger is not built in this kernel. */
+&pwm0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_pwm0_pwm0_1 &pinctrl_pwm0_pwm1_1>;
+	status = "okay";
+};
+
+/ {
+	leds {
+		compatible = "pwm-leds";
+		led-green {
+			label = "pwm:green:user";
+			pwms = <&pwm0 0 10000000 0>;
+			max-brightness = <255>;
+			default-state = "on";
+		};
+		led-red {
+			label = "pwm:red:user";
+			pwms = <&pwm0 1 10000000 0>;
+			max-brightness = <255>;
+			default-state = "on";
+		};
+	};
+};

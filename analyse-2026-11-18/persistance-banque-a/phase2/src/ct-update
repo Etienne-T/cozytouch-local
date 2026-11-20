@@ -1,0 +1,4 @@
+#!/bin/sh
+# Serialise every ct-update action (install, boot-select, promote, abandon).
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+exec flock /run/ct/update.lock luajit /usr/libexec/ct/ct-update.lua "$@"

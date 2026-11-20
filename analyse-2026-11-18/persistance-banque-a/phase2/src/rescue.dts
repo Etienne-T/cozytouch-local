@@ -1,0 +1,10 @@
+#include "at91-kizboxmini-ram4.dts"
+#include "nand.dtsi"
+/ {
+	model = "Overkiz Kizbox Mini lecture NAND en RAM";
+	chosen { bootargs = "console=ttyS0,115200 ip=off rdinit=/init panic=0 loglevel=7"; };
+};
+&nand_controller { nand@3 { cozytouch,read-only-nand; }; };
+&ubi_nand { read-only; };
+&macb0 { status = "disabled"; };
+&usart0 { status = "disabled"; };

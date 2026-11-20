@@ -1,0 +1,5 @@
+#!/bin/sh
+# Called by the service after the radio READ pair is acknowledged by the broker.
+# 1) kboot counter (ack), 2) promote the application version on trial, if any.
+/usr/libexec/ct/ack || exit $?
+/usr/libexec/ct/ct-update promote || exit 40

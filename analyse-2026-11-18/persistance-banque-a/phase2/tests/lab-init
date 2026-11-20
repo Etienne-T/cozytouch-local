@@ -1,0 +1,103 @@
+#!/bin/sh
+set -eu
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+mkdir -p /newroot /check /run
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mount -t tmpfs tmpfs /run
+test "$(cat /sys/class/mtd/mtd1/size)" = 134086656
+test "$(cat /sys/class/mtd/mtd1/erasesize)" = 131072
+test "$(cat /sys/class/mtd/mtd1/writesize)" = 2048
+test "$(cat /sys/class/mtd/mtd1/oobsize)" = 64
+test ! -d /sys/class/ubi/ubi0
+printf '%s\n' 'NANDSIM_GEOMETRY_OK bytes=134086656 page=2048 oob=64 peb=131072'
+ubiformat -y -q -s 2048 -O 2048 -f /fixture/lab.ubi /dev/mtd1
+ubiattach -p /dev/mtd1 -O 2048
+test "$(cat /sys/class/ubi/ubi0/eraseblock_size)" = 126976
+test "$(cat /sys/class/ubi/ubi0_7/type)" = static
+test "$(cat /sys/class/ubi/ubi0_7/reserved_ebs)" = 165
+test "$(cat /sys/class/ubi/ubi0_12/type)" = dynamic
+test "$(cat /sys/class/ubi/ubi0_12/reserved_ebs)" = 130
+mount -t ubifs -o ro ubi0:root /newroot
+mount -t ubifs -o ro ubi0:apps /check
+test "$(cat /newroot/boot/bootloaderid)" = 20180731
+test "$(cat /newroot/boot/cmdline)" = 'ubi.mtd=ubi rootfstype=ubifs ro ip=off'
+ls -ld /check/ct | grep -q '^drwx------'
+test -z "$(ls -A /check/ct)"
+test ! -e /newroot/boot/initrd
+test -z "$(ls -A /newroot/root/.ssh)"
+umount /check
+printf '%s\n' 'UBIFS_EXACT_MOUNT_OK root=ro apps=ro leb=126976 marker=20180731 RO_APPS_PRIVATE_EMPTY'
+apps_image=/fixture/apps-synthetic.ubifs
+for word in $(cat /proc/cmdline); do
+    case "$word" in ct_lab_apps=*) apps_image=/fixture/apps-${word#ct_lab_apps=}.ubifs ;; esac
+done
+ubiupdatevol /dev/ubi0_12 "$apps_image"
+/bin/busybox rm -f /dev/ttyS1
+/bin/busybox mknod /dev/ttyS1 c 204 65
+mount --bind /dev /newroot/dev
+# The emulated board has no radio lines. Replace the PA2 pulse by a marker; the harness
+# answers with the STM32 boot frames only after seeing it.
+if grep -qw ct_lab_pulse_fail /proc/cmdline; then
+    printf '%s\n' "print('RADIO_PULSE refused=lab')" "os.exit(1)" > /run/radio-start.lua
+else
+    printf '%s\n' "print('RADIO_PULSE low_ms=35 restored=true lab')" "os.exit(0)" > /run/radio-start.lua
+fi
+mount --bind /run/radio-start.lua /newroot/usr/share/cozytouch/phase2/radio-start.lua
+if grep -qw ct_lab_alias /proc/cmdline; then
+    (exec 4<>/dev/ttyAMA1; echo held >/run/alias-ready; sleep 60) &
+    while [ ! -s /run/alias-ready ]; do sleep 1; done
+fi
+chroot /newroot /init >/run/service.log 2>&1 &
+service=$!
+/bin/busybox tail -n +1 -f /run/service.log &
+printf '%s\n' 'LAB_SERVICE_STARTED'
+while read -r operation; do
+    case "$operation" in
+        term) kill -TERM "$service"; printf '%s\n' LAB_TERM_SENT ;;
+        kill)
+            child=
+            for process in /proc/[0-9]*; do
+                [ "$(cat "$process/comm" 2>/dev/null || true)" = luajit ] || continue
+                [ "$(awk '/^PPid:/ {print $2}' "$process/status")" != "$service" ] || child=$(echo "$process" | awk -F/ '{print $3}')
+            done
+            test -n "$child"
+            kill -KILL "$child"
+            printf '%s\n' LAB_KILL_SENT
+            ;;
+        observe)
+            (umask 077; printf 'STACK_START %s\n' "$(cat /proc/sys/kernel/random/boot_id)" > /newroot/run/ct/stack-start-observed)
+            printf '%s\n' LAB_PASSIVE_RECEIPT
+            ;;
+        count)
+            mount -t ubifs -o ro ubi0:persistent /check
+            value=$(cat /check/boot/boot_count_file)
+            test "$(cat /check/boot/boot_information_file)" = 'ubi0:root'
+            test "$(cat /check/boot/update/bootloaderid)" = 20180731
+            umount /check
+            printf 'LAB_COUNTER value=%s pointer=unchanged\n' "$value"
+            ;;
+        appstate)
+            state=
+            for name in current previous next trying; do
+                target=$(readlink "/newroot/apps/app/$name" 2>/dev/null || echo -)
+                state="$state $name=$target"
+            done
+            printf 'LAB_APP%s apps=%s\n' "$state" "$(awk '$2 == "/newroot/apps" {split($4, o, ","); print o[1]}' /proc/mounts)"
+            ;;
+        sshcheck)
+            test -s /newroot/run/ct/dropbear.pid && printf '%s\n' LAB_DROPBEAR_PID
+            grep -q ':08AE .* 0A ' /proc/net/tcp && printf '%s\n' LAB_DROPBEAR_LISTEN
+            ;;
+        net)
+            awk 'NR > 1 && $2 == "00000000" { found = 1 } END { exit found }' /proc/net/route
+            printf '%s\n' LAB_NO_DEFAULT_ROUTE
+            chroot /newroot iptables-save | grep -q '^:OUTPUT DROP '
+            test "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)" = 1
+            test "$(cat /proc/sys/net/ipv6/conf/default/disable_ipv6)" = 1
+            printf '%s\n' LAB_NETWORK_DROP
+            ;;
+    esac
+done
+

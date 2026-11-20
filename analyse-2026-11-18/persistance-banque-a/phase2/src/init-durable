@@ -1,0 +1,39 @@
+#!/bin/sh
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+umask 077
+set -eu
+hold() {
+    printf '%s\n' "INIT_HOLD code=$1"
+    while :; do sleep 60; done
+}
+mount -t proc -o nodev,nosuid,noexec proc /proc || hold proc
+mount -t sysfs -o nodev,nosuid,noexec sysfs /sys || hold sysfs
+mount -t tmpfs -o nodev,nosuid,noexec,mode=0755 tmpfs /run || hold run
+test -c /dev/watchdog0 && watchdog -T 12 -t 3 /dev/watchdog0
+mkdir -m 0700 /run/ct /run/ct/ssh || hold tmp
+for ctl in iptables ip6tables; do
+    for chain in INPUT OUTPUT FORWARD; do
+        "$ctl" -w -P "$chain" DROP || hold firewall
+    done
+done
+for flag in all default; do
+    printf '1\n' > "/proc/sys/net/ipv6/conf/$flag/disable_ipv6" || hold ipv6
+done
+printf '0\n' > /proc/sys/net/ipv4/ip_forward || hold forwarding
+printf '%s\n' FIREWALL_DEFAULT_DROP_INTERFACES_DOWN
+mkdir -p /dev/pts || hold devpts_dir
+mount -t devpts -o gid=5,mode=0620,ptmxmode=0666,nosuid,noexec devpts /dev/pts || hold devpts
+mount -t ubifs -o ro,nodev,nosuid,noexec ubi0:apps /apps || hold apps
+mount --bind /run/ct/ssh /root/.ssh || hold ssh_access
+factory=/usr/share/cozytouch/phase2
+# Application version: trial (next), current, or the factory copy in root A.
+/usr/libexec/ct/ct-update boot-select || printf '%s\n' APP_SELECT_FAILED
+app=$(cat /run/ct/app-dir 2>/dev/null || true)
+[ -n "$app" ] || app=$factory
+# Network and SSH always come from root A, whatever the application version.
+(
+    luajit "$factory/service.lua" --network || { echo INIT_NETWORK_CONFIG_REJECTED; exit 1; }
+    dropbear -s -g -j -k -r /run/ct/ssh/host_key -p 2222 -P /run/ct/dropbear.pid || echo INIT_SSH_START_FAILED
+) &
+export CT_APP_DIR="$app"
+exec /usr/libexec/ct/supervise

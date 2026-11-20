@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Minimal RAM test board, derived from the mainline Kizbox Mini base DTS.
+// Linux v6.12 adc218676eef25575469234709c2d87185ca223a.
+// Install as arch/arm/boot/dts/at91-kizboxmini-ram4.dts for CPP include paths.
+/dts-v1/;
+#include "microchip/at91sam9g25.dtsi"
+
+/ {
+	model = "Overkiz Kizbox Mini RAM4 (no NAND)";
+	compatible = "overkiz,kizboxmini-base", "atmel,at91sam9g25",
+		     "atmel,at91sam9x5", "atmel,at91sam9";
+	aliases {
+		serial0 = &dbgu;
+		serial1 = &usart0;
+		ethernet0 = &macb0;
+	};
+	chosen {
+		bootargs = "console=ttyS0,115200 ip=off rdinit=/init panic=0 loglevel=7";
+		stdout-path = "serial0:115200n8";
+		// Patched OFFLINE to exact payload length by prepare_dtb.py.
+		linux,initrd-start = <0x24000000>;
+		linux,initrd-end = <0x24000000>;
+	};
+	memory@20000000 {
+		device_type = "memory";
+		reg = <0x20000000 0x08000000>;
+	};
+	clocks {
+		main_xtal { clock-frequency = <12000000>; };
+		slow_xtal { clock-frequency = <32768>; };
+	};
+};
+
+&dbgu { status = "okay"; };
+// This UART has NO console or automatic userspace opener. No MCU reset GPIO.
+&usart0 {
+	atmel,use-dma-rx;
+	atmel,use-dma-tx;
+	status = "okay";
+};
+&macb0 { phy-mode = "rmii"; status = "okay"; };
+&watchdog { status = "okay"; };
+&ebi { status = "disabled"; };
+&nand_controller { status = "disabled"; };
+&usb0 { status = "disabled"; };
+&usb1 { status = "disabled"; };
+&adc0 { status = "disabled"; };
+&rtc { status = "disabled"; };

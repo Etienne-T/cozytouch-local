@@ -1,0 +1,10 @@
+# Applied by Buildroot makedevs under fakeroot, AFTER overlay normalization.
+# F means optional existing regular file: public images create no dummy key.
+# <path> <type> <mode> <uid> <gid> <major> <minor> <start> <inc> <count>
+/root/.ssh                              d 0700 0 0 - - - - -
+/root/.ssh/authorized_keys              F 0600 0 0 - - - - -
+/etc/ramlab-hostkeys                    d 0700 0 0 - - - - -
+/etc/ramlab-hostkeys/host_rsa_key        F 0600 0 0 - - - - -
+/etc/ramlab-hostkeys/host_rsa_key.pub    F 0600 0 0 - - - - -
+/etc/ramlab.conf                        F 0600 0 0 - - - - -
+/etc/ramlab-console-rescue              F 0600 0 0 - - - - -

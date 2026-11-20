@@ -1,0 +1,801 @@
+CTAPP1
+F config.lua 3076 22d95a673a4a3efd9c4447abe07bf5e257fead366eff9d5f2cefb6f28e8664d0
+local ffi = require('ffi')
+ffi.cdef[[
+int ct_read_file(const char *, const char *, char *, int);
+int ct_uart_sole(const char *, int);
+]]
+local safe = ffi.load('/usr/lib/libct-safe.so')
+local M = { safe = safe }
+
+function M.read(directory, name, max)
+  local buffer = ffi.new('char[?]', max + 1)
+  local size = safe.ct_read_file(directory, name, buffer, max + 1)
+  assert(size > 0 and size <= max, 'private file rejected')
+  return ffi.string(buffer, size)
+end
+
+local function ipv4(value)
+  assert(value, 'missing IPv4')
+  local a, b, c, d = value:match('^(%d+)%.(%d+)%.(%d+)%.(%d+)$')
+  a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+  assert(a and a <= 255 and b <= 255 and c <= 255 and d <= 255
+    and value == table.concat({a, b, c, d}, '.'), 'noncanonical IPv4')
+  assert(a == 10 or (a == 172 and b >= 16 and b <= 31) or (a == 192 and b == 168), 'private IPv4 required')
+  return ((a * 256 + b) * 256 + c) * 256 + d
+end
+
+local function integer(value, low, high)
+  assert(value and value:match('^%d+$'), 'invalid number')
+  local number = tonumber(value)
+  assert(number >= low and number <= high and tostring(number) == value, 'numeric bound')
+  return number
+end
+
+function M.parse(text)
+  local config = {}
+  local keys = {
+    broker_ipv4 = true, broker_port = true, mqtt_username = true, mqtt_password = true,
+    client_id = true, lan_ipv4 = true, lan_prefix = true, admin_ipv4 = true, interval_seconds = true
+  }
+  for line in text:gmatch('[^\r\n]+') do
+    if line:sub(1, 1) ~= '#' then
+      local key, value = line:match('^([a-z][a-z0-9_]*)=(.+)$')
+      assert(keys[key] and not config[key] and not value:find('[%z\1-\31\127]'), 'configuration field')
+      config[key] = value
+    end
+  end
+  for key in pairs(keys) do
+    assert(config[key], 'missing required configuration field')
+  end
+  local address = ipv4(config.lan_ipv4)
+  local broker = ipv4(config.broker_ipv4)
+  local admin = ipv4(config.admin_ipv4)
+  config.lan_prefix = integer(config.lan_prefix, 8, 30)
+  local block = 2 ^ (32 - config.lan_prefix)
+  for _, host in ipairs({ address, broker, admin }) do
+    assert(math.floor(host / block) == math.floor(address / block)
+      and host % block > 0 and host % block < block - 1, 'local hosts only')
+  end
+  assert(address ~= broker and address ~= admin, 'distinct local peers required')
+  config.broker_port = integer(config.broker_port, 1, 65535)
+  config.interval_seconds = integer(config.interval_seconds, 30, 3600)
+  assert(#config.mqtt_username <= 128 and not config.mqtt_username:find('[\128-\255]')
+    and #config.mqtt_password <= 256, 'MQTT credential bounds')
+  assert(#config.client_id <= 48 and config.client_id:match('^[A-Za-z0-9_-]+$'), 'MQTT identifier syntax')
+  config.topic_prefix = 'cozytouch/' .. config.client_id
+  config.state_topics = {config.topic_prefix .. '/cethi/state', config.topic_prefix .. '/ic3/state'}
+  config.discovery_topics = {
+    'homeassistant/sensor/' .. config.client_id .. '/cethi/config',
+    'homeassistant/sensor/' .. config.client_id .. '/ic3/config'
+  }
+  return config
+end
+
+return M
+F led.lua 1326 a7a56cf4be378ba4a343b966a16c66152546075d317fe15435da0da84400521f
+-- Status LED through the kernel LED class (pwm-leds, src/leds.dtsi).
+-- States: boot = orange (kernel default), working = green blinking 1 Hz,
+-- ok = green, error = red. The LED is advisory: write failures never stop the service.
+local M = {}
+local base = '/sys/class/leds/pwm:%s:user/%s'
+local current
+
+local function write(color, attribute, value)
+  local file = io.open(string.format(base, color, attribute), 'w')
+  if not file then return false end
+  local ok = file:write(value) and true or false
+  return file:close() and ok
+end
+
+local patterns = {
+  boot = {red = 255, green = 255},
+  working = {red = 0, green = 'blink'},
+  ok = {red = 0, green = 255},
+  error = {red = 255, green = 0},
+}
+
+function M.set(state)
+  if state == current then return end
+  local pattern = assert(patterns[state], 'LED state')
+  current = state
+  local applied = true
+  for _, color in ipairs({'red', 'green'}) do
+    local value = pattern[color]
+    local ok
+    if value == 'blink' then
+      ok = write(color, 'trigger', 'timer') and write(color, 'delay_on', '500')
+        and write(color, 'delay_off', '500')
+    else
+      ok = write(color, 'trigger', 'none') and write(color, 'brightness', tostring(value))
+    end
+    applied = applied and ok
+  end
+  print('LED state=' .. state .. ' applied=' .. tostring(applied))
+end
+
+return M
+F mqtt.lua 8325 e33b51ba0dd958fadb8a60c2834042383b3ff382c7ccf6833e18f131609b4cca
+-- MQTT 3.1.1 subset: clean session, retained QoS1, LWT, keepalive.
+-- MQTT username/password on an isolated LAN; no subscription or command path.
+local M={}
+local function u16(n) assert(n>=0 and n<65536 and n%1==0);return string.char(math.floor(n/256),n%256) end
+local function str(s) assert(type(s)=='string' and #s<=65535);return u16(#s)..s end
+local function remaining(n)
+  assert(n>=0 and n<=4096);local bytes={}
+  repeat local b=n%128;n=math.floor(n/128);if n>0 then b=b+128 end;bytes[#bytes+1]=string.char(b) until n==0
+  return table.concat(bytes)
+end
+function M.packet(header,payload) return string.char(header)..remaining(#payload)..payload end
+function M.connect_packet(c)
+  return M.packet(0x10, str('MQTT') .. string.char(4, 0xee) .. u16(20) .. str(c.client_id) .. str(c.topic_prefix .. '/availability') .. str('offline') .. str(c.mqtt_username) .. str(c.mqtt_password))
+end
+function M.publish_packet(topic,payload,id,retain)
+  assert(#topic<=200 and #payload<=2048 and id>=1 and id<=65535,'outgoing MQTT bounds')
+  return M.packet(retain and 0x33 or 0x32,str(topic)..u16(id)..payload)
+end
+function M.parser()
+  local p={buf=''}
+  function p:feed(data)
+    assert(#data<=4096 and #self.buf+#data<=8192,'MQTT receive bound');self.buf=self.buf..data;local rows={}
+    while #self.buf>=2 do
+      local n,m,pos=0,1,2;local complete=false
+      for _=1,4 do
+        if pos>#self.buf then break end
+        local b=self.buf:byte(pos);n=n+(b%128)*m;pos=pos+1
+        assert(n<=64,'unexpected large MQTT server packet')
+        if b<128 then complete=true;break end;m=m*128
+        assert(pos<=5,'malformed MQTT remaining length')
+      end
+      if not complete or #self.buf<pos+n-1 then break end
+      rows[#rows+1]={header=self.buf:byte(1),data=self.buf:sub(pos,pos+n-1)};self.buf=self.buf:sub(pos+n)
+    end
+    return rows
+  end
+  return p
+end
+function M.new(config,transport,log)
+  local c={config=config,io=transport,log=log or function() end,state='disconnected',next_try=0,backoff=1,latest={},dirty={},acknowledged={},pid=0,tx='',parser=M.parser(),inflight=nil,acks=0,connections=0,availability='starting',ping_at=nil,last_io=0,last_tx=0}
+  function c:set(topic,payload,retain)
+    assert(#topic <= 200 and #payload <= 2048, 'MQTT publication bound')
+    assert(topic == config.topic_prefix .. '/availability' or topic == config.state_topics[1] or topic == config.state_topics[2] or topic == config.discovery_topics[1] or topic == config.discovery_topics[2], 'MQTT topic not allowed')
+    self.latest[topic]={payload=payload,retain=retain~=false};self.dirty[topic]=true
+    local count=0;for _ in pairs(self.latest) do count=count+1 end;assert(count<=5,'publication queue bound')
+  end
+  function c:set_availability(value)
+    assert(value=='starting' or value=='online' or value=='offline','availability value')
+    self.availability=value;self:set(config.topic_prefix..'/availability',value,true)
+  end
+  function c:disconnect(now,reason)
+    self.io:close();self.state='disconnected';self.tx='';self.inflight=nil;self.parser=M.parser();self.ping_at=nil
+    for topic in pairs(self.latest) do self.dirty[topic]=true end
+    self.acknowledged={}
+    for _, topic in ipairs(config.state_topics) do self.latest[topic]=nil;self.dirty[topic]=nil end
+    self.next_try=now+self.backoff;self.backoff=math.min(self.backoff*2,16)
+    self.log('MQTT_DISCONNECTED reason='..tostring(reason)..' retry_seconds='..(self.next_try-now))
+  end
+  function c:close_abrupt()
+    self.io:close();self.state='closed';self.tx='';self.inflight=nil
+  end
+  function c:queue(packet,now) assert(#self.tx+#packet<=4096,'MQTT send bound');self.tx=self.tx..packet end
+  function c:step(now)
+    if self.state=='closed' then return end
+    local ok,err=pcall(function()
+      if self.state=='disconnected' then
+        if now<self.next_try then return end
+        self.io:open();self.state='connecting';self.deadline=now+3;self.log('MQTT_CONNECTING')
+      end
+      if self.state=='connecting' then
+        assert(now<self.deadline,'connect timeout')
+        if not self.io:connected() then return end
+        self.state='connack';self.deadline=now+3;self:queue(M.connect_packet(config),now);self.last_io=now;self.last_tx=now
+      end
+      if #self.tx>0 then
+        local n=self.io:write(self.tx)
+        assert(n>=0 and n<=#self.tx,'invalid socket write count')
+        if n>0 then self.tx=self.tx:sub(n+1);self.last_io=now;self.last_tx=now end
+      end
+      local data=self.io:read()
+      if data and #data>0 then
+        self.last_io=now
+        for _,p in ipairs(self.parser:feed(data)) do
+          if self.state=='connack' then
+            assert(p.header==0x20 and #p.data==2 and p.data:byte(1)==0 and p.data:byte(2)==0,'CONNACK refused or invalid')
+            self.state='ready';self.connections=self.connections+1
+            -- Backoff resets only after a successful QoS1 acknowledgement,
+            -- so an endpoint that repeatedly disconnects cannot cause spin.
+            for topic in pairs(self.latest) do self.dirty[topic]=true end
+            self:set_availability(self.availability);self.log('MQTT_CONNECTED clean_session=true')
+          elseif self.state=='ready' then
+            if p.header==0x40 then
+              assert(#p.data==2 and self.inflight,'unexpected PUBACK')
+              local id=p.data:byte(1)*256+p.data:byte(2);assert(id==self.inflight.id,'uncorrelated PUBACK')
+              local sent=self.inflight;self.inflight=nil;self.acks=self.acks+1;self.backoff=1
+              self.acknowledged[sent.topic]=sent.payload
+              -- A newer value can replace a topic while its older packet is
+              -- in flight. Clear dirty only when the acknowledged payload is
+              -- still the latest value.
+              if self.latest[sent.topic] and self.latest[sent.topic].payload==sent.payload then self.dirty[sent.topic]=nil end
+              self.log('MQTT_PUBACK topic_suffix='..sent.topic:match('/([^/]+)$')..' ack_count='..self.acks)
+            elseif p.header==0xd0 then assert(#p.data==0 and self.ping_at,'unexpected PINGRESP');self.ping_at=nil
+            else error('unexpected MQTT packet; no incoming commands supported') end
+          else error('MQTT packet in invalid state') end
+        end
+      end
+      if self.state=='connack' then assert(now<self.deadline,'CONNACK timeout') end
+      if self.state=='ready' then
+        if self.inflight then assert(now<self.inflight.deadline,'PUBACK timeout') end
+        if self.ping_at then assert(now-self.ping_at<5,'PINGRESP timeout') end
+        if not self.inflight and #self.tx==0 then
+          local topic=nil;local availability=config.topic_prefix..'/availability'
+          if self.dirty[availability] then topic=availability else for _,candidate in ipairs({config.discovery_topics[1],config.discovery_topics[2],config.state_topics[1],config.state_topics[2]}) do if self.dirty[candidate] then topic=candidate;break end end end
+          if topic then
+            local value=self.latest[topic];self.pid=self.pid%65535+1
+            self.inflight={id=self.pid,topic=topic,payload=value.payload,deadline=now+5}
+            self:queue(M.publish_packet(topic,value.payload,self.pid,value.retain),now)
+          end
+        end
+        if now-self.last_tx>=8 and not self.ping_at and #self.tx==0 then self:queue(string.char(0xc0,0),now);self.ping_at=now end
+      end
+    end)
+    if not ok then self:disconnect(now,'protocol_or_transport_error');self.last_error=tostring(err) end
+  end
+  function c:offline_acked() return self.state=='ready' and self.latest[config.topic_prefix..'/availability'] and self.latest[config.topic_prefix..'/availability'].payload=='offline' and not self.dirty[config.topic_prefix..'/availability'] and not self.inflight and #self.tx==0 end
+  function c:graceful_disconnect(now, pause, deadline)
+    assert(self:offline_acked(), 'offline publication not acknowledged')
+    local packet = string.char(0xe0, 0)
+    local ok = pcall(function()
+      while #packet > 0 and now() < deadline do
+        local sent = self.io:write(packet)
+        assert(sent >= 0 and sent <= #packet, 'invalid socket write count')
+        packet = packet:sub(sent + 1)
+        if #packet > 0 then pause() end
+      end
+    end)
+    self:close_abrupt()
+    return ok and #packet == 0
+  end
+  return c
+end
+return M
+F net.lua 3861 771c285bf96fca3a04e885c831922b109111019e8abcf0f1aa0379aa23b8a045
+-- Linux FFI TCP transport. Numeric private IPv4 only, no DNS/account access.
+local ffi=require('ffi')
+require('uart').check_abi() -- Declares the shared clock once; opens no UART.
+ffi.cdef[[
+typedef struct { unsigned short family,port; unsigned char addr[4]; unsigned char zero[8]; } ct_mqtt_sockaddr;
+typedef struct { int fd; short events,revents; } ct_mqtt_pollfd;
+typedef struct { long sec,nsec; } ct_mqtt_time;
+int socket(int,int,int); int connect(int,const void*,unsigned int); int close(int);
+long send(int,const void*,unsigned long,int); long recv(int,void*,unsigned long,int);
+int poll(ct_mqtt_pollfd*,unsigned long,int); int getsockopt(int,int,int,void*,unsigned int*);
+int inet_pton(int,const char*,void*); unsigned short htons(unsigned short);
+int usleep(unsigned int); int getpid(void);
+typedef union { unsigned long alignment; unsigned char bytes[128]; } ct_mqtt_sigset;
+int sigemptyset(ct_mqtt_sigset*); int sigaddset(ct_mqtt_sigset*,int);
+int sigprocmask(int,const ct_mqtt_sigset*,ct_mqtt_sigset*);
+int sigtimedwait(const ct_mqtt_sigset*,void*,const ct_mqtt_time*);
+]]
+local C=ffi.C;local M={}
+assert(ffi.os=='Linux','Linux socket ABI required')
+assert(ffi.sizeof('ct_mqtt_sockaddr')==16 and ffi.sizeof('ct_mqtt_pollfd')==8,'socket ABI')
+function M.now() local ts=ffi.new('ct_time[1]');assert(C.clock_gettime(1,ts)==0,'clock_gettime');return tonumber(ts[0].sec)+tonumber(ts[0].nsec)/1e9 end
+function M.pause() C.usleep(10000) end
+function M.pid() return tonumber(C.getpid()) end
+function M.stop_signals()
+  -- Consume blocked TERM/INT synchronously. No Lua code runs in an async
+  -- signal handler; the normal service path can restore termios safely.
+  local set=ffi.new('ct_mqtt_sigset[1]');local previous=ffi.new('ct_mqtt_sigset[1]')
+  assert(C.sigemptyset(set)==0 and C.sigaddset(set,2)==0 and C.sigaddset(set,15)==0 and C.sigprocmask(0,set,previous)==0,'signal mask')
+  local zero=ffi.new('ct_mqtt_time[1]')
+  return {
+    poll=function() local n=C.sigtimedwait(set,nil,zero);if n==2 or n==15 then return true end;assert(n<0 and (ffi.errno()==11 or ffi.errno()==4),'signal wait');return false end,
+    restore=function() return C.sigprocmask(2,previous,nil)==0 end,
+  }
+end
+function M.transport(config)
+  local t={fd=-1};local buf=ffi.new('char[4096]')
+  function t:close() if self.fd>=0 then C.close(self.fd);self.fd=-1 end end
+  function t:open()
+    assert(self.fd<0,'socket already open');self.fd=tonumber(C.socket(2,0x80801,0));assert(self.fd>=0,'socket errno='..ffi.errno()) -- stream|nonblock|cloexec
+    local addr=ffi.new('ct_mqtt_sockaddr[1]');addr[0].family=2;addr[0].port=C.htons(config.broker_port)
+    assert(C.inet_pton(2,config.broker_ipv4,addr[0].addr)==1,'numeric IPv4')
+    local result=C.connect(self.fd,addr,16);assert(result==0 or ffi.errno()==115,'connect errno='..ffi.errno())
+  end
+  function t:connected()
+    assert(self.fd>=0,'socket closed');local p=ffi.new('ct_mqtt_pollfd[1]');p[0].fd=self.fd;p[0].events=4
+    local result=C.poll(p,1,0);assert(result>=0 or ffi.errno()==4,'poll errno='..ffi.errno());if result<=0 then return false end
+    local err=ffi.new('int[1]');local size=ffi.new('unsigned int[1]',4)
+    assert(C.getsockopt(self.fd,1,4,err,size)==0,'getsockopt errno='..ffi.errno());assert(err[0]==0,'connect SO_ERROR='..tonumber(err[0])..' poll_revents='..tonumber(p[0].revents));return true
+  end
+  function t:write(data)
+    local n=tonumber(C.send(self.fd,data,#data,0x4000)) -- MSG_NOSIGNAL
+    if n<0 and (ffi.errno()==11 or ffi.errno()==4) then return 0 end
+    assert(n>=0,'socket send errno='..ffi.errno());return n
+  end
+  function t:read()
+    local n=tonumber(C.recv(self.fd,buf,4096,0));if n<0 and (ffi.errno()==11 or ffi.errno()==4) then return nil end
+    assert(n~=0,'socket EOF');assert(n>0,'socket receive errno='..ffi.errno());return ffi.string(buf,n)
+  end
+  return t
+end
+return M
+F service.lua 7246 31c57c6804c16ecc85c7747ced67012dd4a4f08780b50d0409a11844f5c9f80e
+local directory = assert(arg[0]:match('^(.*[/\\])'))
+package.path = directory .. '?.lua;' .. package.path
+local Config = require('config')
+local UART = require('uart')
+local Net = require('net')
+local MQTT = require('mqtt')
+local json = require('cjson')
+local Led = require('led')
+
+io.stdout:setvbuf('no')
+local mode = arg[1]
+local private_dir = '/apps/ct'
+local device = '/dev/ttyS1'
+local loaded, config, targets = pcall(function()
+  local c = Config.parse(Config.read(private_dir, 'broker.conf', 4096))
+  local t = UART.config(Config.read(private_dir, 'targets.conf', 2047))
+  return c, t
+end)
+if not loaded then print('CONFIG_REJECTED'); os.exit(21) end
+
+if mode == '--check-config' then
+  print('CONFIG_OK targets=2')
+  return
+end
+if mode == '--network' then
+  local loaded_keys, keys, host_key = pcall(function()
+    return Config.read(private_dir, 'authorized_keys', 4096), Config.read(private_dir, 'ssh_host_key', 4096)
+  end)
+  if not loaded_keys then print('SSH_CONFIG_REJECTED'); os.exit(21) end
+  local function write(path, data)
+    local file = assert(io.open(path, 'wb'))
+    assert(file:write(data))
+    assert(file:close())
+  end
+  write('/run/ct/ssh/authorized_keys', keys)
+  write('/run/ct/ssh/host_key', host_key)
+  local command = table.concat({'/usr/libexec/ct/network.sh', config.lan_ipv4,
+    config.lan_prefix, config.broker_ipv4, config.broker_port, config.admin_ipv4}, ' ')
+  os.exit(os.execute(command) == 0 and 0 or 21)
+end
+assert(mode == '--run', 'service mode')
+
+local function discovery(index)
+  local label = index == 1 and 'CETHI' or 'IC3'
+  local id = config.client_id .. '_' .. label:lower()
+  return json.encode({
+    name = 'Valeur brute', unique_id = id .. '_raw', state_topic = config.state_topics[index],
+    value_template = '{{ value_json.current_raw }}',
+    json_attributes_topic = config.state_topics[index],
+    availability_topic = config.topic_prefix .. '/availability', expire_after = config.interval_seconds + 30,
+    device = { identifiers = { id }, name = 'Cozytouch ' .. label }
+  })
+end
+
+local mqtt = MQTT.new(config, Net.transport(config), print)
+Led.set('working')
+-- Health budget: 95 s of MQTT session time, not wall time. While the broker is
+-- unreachable (Home Assistant still booting after a power cut), the service waits.
+local health_budget, connected_seconds, last_tick = 95, 0, Net.now()
+local stop = Net.stop_signals()
+local uart
+local terminal_code = 0
+local function has_current_ack(topic)
+  return mqtt.state == 'ready' and mqtt.acknowledged[topic] == (mqtt.latest[topic] or {}).payload
+    and mqtt.latest[topic] ~= nil
+end
+
+local ok, reason = pcall(function()
+  uart = UART.open_session(targets, Net.now, device)
+  local next_read, pending_publish = 0, false
+  local pair, pair_connection = {}, nil
+  local read_index, sequence = 1, 0
+  local online, stopping, ack_done = false, false, false
+  for i, topic in ipairs(config.discovery_topics) do mqtt:set(topic, discovery(i), true) end
+  mqtt:set_availability('offline')
+  while true do
+    stopping = stopping or stop.poll()
+    local now = Net.now()
+    if mqtt.state == 'ready' then connected_seconds = connected_seconds + (now - last_tick) end
+    last_tick = now
+    if not ack_done and terminal_code == 0 and connected_seconds >= health_budget then
+      print('HEALTH_TIMEOUT connected_seconds=' .. health_budget)
+      terminal_code, stopping = 31, true
+    end
+    if stopping and not uart.active and uart.stage ~= 'revision' then break end
+    mqtt:step(now)
+    local result = uart:step(stopping)
+    if uart.ready and not online and not stopping then
+      online = true
+      mqtt:set_availability('online')
+    end
+    if result then
+      print('READ_RESULT index=' .. result.index .. ' status=' .. result.status)
+      if result.status ~= 'DONE' then
+        terminal_code = (result.status == 'TIMEOUT') and 32 or 33
+        break
+      end
+      if mqtt.state == 'ready' and pair_connection == mqtt.connections and not stopping then
+        local d = result.data
+        sequence = sequence + 1
+        pair[result.index] = json.encode({
+          status = 'DONE', value_semantics = 'main_parameter_raw',
+          current_raw = d.current_raw, target_raw = d.target_raw,
+          remaining_time_raw = d.remaining_time_raw, origin_raw = d.origin, rssi_raw = d.rssi,
+          observed_monotonic_ms = math.floor(Net.now() * 1000), sequence = sequence
+        })
+        if result.index == 2 then
+          for i, topic in ipairs(config.state_topics) do mqtt:set(topic, pair[i], false) end
+          pending_publish, read_index = true, 1
+          next_read = Net.now() + config.interval_seconds
+        else
+          read_index = 2
+        end
+      else
+        pair, read_index, next_read = {}, 1, Net.now() + config.interval_seconds
+      end
+    end
+    local ready = online and mqtt.state == 'ready'
+      and mqtt.acknowledged[config.topic_prefix .. '/availability'] == 'online'
+      and has_current_ack(config.discovery_topics[1]) and has_current_ack(config.discovery_topics[2])
+    if pending_publish and (mqtt.state ~= 'ready' or pair_connection ~= mqtt.connections) then
+      pending_publish, read_index, next_read = false, 1, Net.now() + config.interval_seconds
+    end
+    if ready and pending_publish and has_current_ack(config.state_topics[1])
+        and has_current_ack(config.state_topics[2]) and not stopping then
+      pending_publish = false
+      if not ack_done then
+        local ack_status = os.execute('/usr/libexec/ct/healthy')
+        if ack_status ~= 0 then terminal_code = 34; break end
+        ack_done = true
+        print('HEALTH_OK counter_ack=verified')
+      end
+    end
+    Led.set((ready and ack_done and not pending_publish) and 'ok' or 'working')
+    if read_index == 2 and (not ready or pair_connection ~= mqtt.connections) then
+      pair, read_index, next_read = {}, 1, Net.now() + config.interval_seconds
+    end
+    if not stopping and ready and not pending_publish and not uart.active
+        and (read_index == 2 or Net.now() >= next_read) then
+      if read_index == 1 then pair, pair_connection = {}, mqtt.connections end
+      uart:start(read_index)
+      print('READ_ARMED index=' .. read_index)
+    end
+    Net.pause()
+  end
+  if terminal_code == 0 and not ack_done then terminal_code = 31 end
+end)
+local restored = not uart or uart:close()
+print('UART_CLEANUP restored=' .. tostring(restored))
+if not ok then
+  local label = tostring(reason):match('STM32_[A-Z_]+') or tostring(reason):match('UART_[A-Z_]+') or 'SERVICE_FAILURE'
+  terminal_code = label:match('^STM32_') and 35 or 36
+  print(label)
+end
+if not restored then terminal_code = 36 end
+if terminal_code ~= 0 then Led.set('error') end
+mqtt:set_availability('offline')
+local cutoff = Net.now() + 6
+if mqtt.state == 'ready' then
+  while Net.now() < cutoff and mqtt.state == 'ready' and not mqtt:offline_acked() do
+    mqtt:step(Net.now())
+    Net.pause()
+  end
+end
+if mqtt:offline_acked() then
+  local sent = mqtt:graceful_disconnect(Net.now, Net.pause, cutoff)
+  print('MQTT_DISCONNECT complete=' .. tostring(sent))
+else
+  mqtt:close_abrupt()
+end
+if not stop.restore() then terminal_code = 36 end
+print('SERVICE_EXIT status=' .. terminal_code .. ' pubacks=' .. mqtt.acks)
+os.exit(terminal_code)
+
+F uart.lua 15312 b530b8bba2394cfec241701b054cfbef5b4c51a4fbaa54aa45b75c733b2e8230
+-- Derived module: tested codec and ABI preserved; no automatic CLI.
+-- Autonomous warm-session reader. No OEM/cloud modules; no reset/init/discovery.
+-- Hardware CLI: luajit cozytouch-read.lua --read-two /run/ct/.../targets.private.conf
+-- Offline CLI: --selftest | --check-config FILE | --abi-only
+local M={}
+local function xor(a,b)
+  local n,p=0,1
+  for _=1,8 do if a%2~=b%2 then n=n+p end a=math.floor(a/2) b=math.floor(b/2) p=p*2 end
+  return n
+end
+function M.crc(s)
+  local c=0
+  for i=1,#s do c=xor(c,s:byte(i)); for _=1,8 do local hi=c>=128; c=(c*2)%256; if hi then c=xor(c,7) end end end
+  return c
+end
+local function unhex(s,n)
+  assert(type(s)=='string' and #s==n*2 and s:match('^[0-9a-f]+$'),'invalid private field')
+  return (s:gsub('..',function(b) return string.char(tonumber(b,16)) end))
+end
+local function be(s,i,n) local v=0; for j=i,i+n-1 do v=v*256+s:byte(j) end return v end
+local function frame(id,p) local n=#p+1; return string.char(2,math.floor(id/256),id%256,math.floor(n/256),n%256)..p..string.char(M.crc(p),3) end
+local field_sizes={3,3,1,2,3,1,1,2,1,1,16}
+function M.config(text)
+  assert(type(text)=='string' and #text<2048,'config size')
+  local out={}; local seen={}
+  for line in text:gmatch('[^\r\n]+') do
+    local cells={}; for c in (line..'|'):gmatch('(.-)|') do cells[#cells+1]=c end
+    assert(#cells==12 and (cells[1]=='CETHI' or cells[1]=='IC3') and not seen[cells[1]],'config targets')
+    local t={label=cells[1],fields={}}
+    for i,n in ipairs(field_sizes) do t.fields[i]=unhex(cells[i+1],n) end
+    t.source=t.fields[1]; t.target=t.fields[2]
+    assert(t.source~=t.target and t.target~=string.rep('\0',3),'invalid node context')
+    assert(t.fields[11]~=string.rep('\0',16),'empty key context')
+    seen[t.label]=true;out[#out+1]=t
+  end
+  assert(#out==2 and out[1].label=='CETHI' and out[2].label=='IC3' and out[1].target~=out[2].target,'exactly two ordered distinct targets required')
+  return out
+end
+function M.request(t)
+  -- Named context fields follow FrameDefinition.lua, not RF replay bytes.
+  -- Only ACTIVATE_STATUS_REQUEST, MAIN_INFO, zero functional parameters.
+  local p=table.concat(t.fields)..string.char(1,3,3,0,0)
+  assert(#p==39 and p:byte(35)==1 and p:sub(36)==string.char(3,3,0,0),'READ allowlist')
+  return frame(0x0100,p)
+end
+function M.parser()
+  local p={buf='',rejected=0,noise=0,since=nil}
+  function p:feed(chunk,now)
+    assert(#chunk<=4096,'oversized input chunk')
+    self.buf=self.buf..chunk
+    local out={}
+    while #self.buf>0 do
+      local at=self.buf:find(string.char(2),1,true)
+      if not at then self.noise=self.noise+#self.buf;self.buf='';self.since=nil;break end
+      if at>1 then self.noise=self.noise+at-1;self.buf=self.buf:sub(at);self.since=nil end
+      if not self.since then self.since=now end
+      local discard=false
+      if #self.buf>=5 then
+        local n=be(self.buf,4,2)
+        if n<1 or n>128 then discard=true
+        elseif #self.buf>=n+6 then
+          local payload=self.buf:sub(6,n+4)
+          if self.buf:byte(n+6)~=3 or self.buf:byte(n+5)~=M.crc(payload) then discard=true
+          else
+            out[#out+1]={id=be(self.buf,2,2),payload=payload}
+            self.buf=self.buf:sub(n+7);self.since=nil
+          end
+        elseif now-self.since>=0.25 then discard=true else break end
+      elseif now-self.since>=0.25 then discard=true else break end
+      if discard then self.rejected=self.rejected+1;self.buf=self.buf:sub(2);self.since=nil end
+    end
+    assert(#self.buf<=134,'parser bound')
+    return out
+  end
+  return p
+end
+function M.transaction(target,start,deadline)
+  local t={target=target,start=start,deadline=deadline,done=false,ignored=0}
+  function t:finish(status,data) if self.done then return false end;self.done=true;self.status=status;self.data=data;return true end
+  function t:tick(now) if not self.done and now>=self.deadline then self:finish('TIMEOUT') end end
+  function t:accept(f,now)
+    self:tick(now);if self.done then return false end
+    if f.id==0x050e then self:finish('RESET_CONTEXT_LOST');return true end
+    local p=f.payload
+    if f.id~=0x010d or #p<16 or p:sub(5,7)~=target.target or p:sub(8,10)~=target.source then self.ignored=self.ignored+1;return false end
+    -- Only IO, 2-way ACTIVATE_ACK; IO control flag is bit 5 (MSB schema).
+    if p:byte(11)~=0 or math.floor(p:byte(12)/32)%2~=0 or p:byte(14)~=4 then self.ignored=self.ignored+1;return false end
+    local basic,detailed=p:byte(15),p:byte(16)
+    local cs,es=math.floor(basic/8),basic%8
+    local info={command_status=cs,execute_status=es,detailed_status=detailed,rssi=be(p,1,4)}
+    if info.rssi>=2147483648 then info.rssi=info.rssi-4294967296 end
+    if cs~=0 or es==0 or es==1 or detailed~=0 then self:finish('DEVICE_ERROR',info);return true end
+    if es~=5 then self.ignored=self.ignored+1;return false end
+    -- Context-dependent ACK: 10 bytes MAIN_INFO then FPI1,FPI2 (both zero).
+    if #p~=28 or p:byte(27)~=0 or p:byte(28)~=0 then self:finish('UNSUPPORTED_ACK_SHAPE',info);return true end
+    info.target_raw=be(p,17,2);info.current_raw=be(p,19,2);info.remaining_time_raw=be(p,21,2);info.origin=p:byte(26)
+    -- Bytes 23..25 are the private last-master address and are never logged.
+    self:finish('DONE',info);return true
+  end
+  return t
+end
+function M.selftest()
+  assert(M.crc('123456789')==0xf4,'CRC known vector')
+  local f1={'010203','040506','00','0c01','000000','0c','00','0000','00','07',string.rep('11',16)}
+  local f2={'010203','070809','00','0d01','000000','0c','00','0000','00','07',string.rep('11',16)}
+  local text='CETHI|'..table.concat(f1,'|')..'\nIC3|'..table.concat(f2,'|')..'\n'
+  local targets=M.config(text);local tx=M.request(targets[1]);assert(#tx==46 and tx:byte(40)==1,'TX shape')
+  local p=string.char(255,255,255,160)..targets[1].target..targets[1].source..string.char(0,150,0,4,5,0,200,0,200,0,0,0,1,2,3,1,0,0)
+  local rx=frame(0x010d,p);assert(#p==28,'fixture')
+  for cut=0,#rx do
+    local parser=M.parser();local a=parser:feed(rx:sub(1,cut),0);local b=parser:feed(rx:sub(cut+1),0.01)
+    assert(#a+#b==1 and #parser.buf==0,'fragmentation')
+  end
+  local parser=M.parser(); local got={}
+  for i=1,#rx do for _,f in ipairs(parser:feed(rx:sub(i,i),i/1000)) do got[#got+1]=f end end
+  assert(#got==1 and got[1].payload==p,'byte fragmentation')
+  local bad=rx:sub(1,-3)..string.char((rx:byte(-2)+1)%256,3)
+  parser=M.parser();assert(#parser:feed('noise'..bad..rx..rx,0)==2 and parser.rejected>=1,'CRC resync and concatenation')
+  parser=M.parser();assert(#parser:feed(string.char(2,1,13,255,255)..rx,0)==1 and parser.rejected>=1,'oversized length')
+  parser=M.parser();assert(#parser:feed(string.char(2,1,13,0,100)..rx,0)==0,'wait partial');assert(#parser:feed('',0.3)==1,'partial deadline resync')
+  local t=M.transaction(targets[1],0,8);assert(t:accept({id=0x010d,payload=p},0.1) and t.status=='DONE' and t.data.target_raw==51200,'decode')
+  assert(not t:accept({id=0x010d,payload=p},0.2),'single terminal')
+  t=M.transaction(targets[2],0,8);assert(not t:accept({id=0x010d,payload=p},0.1) and not t.done,'wrong target');t:tick(8);assert(t.status=='TIMEOUT','timeout')
+  t=M.transaction(targets[1],0,8);assert(not t:accept({id=0x010e,payload=p},0.1),'wrong callback')
+  local wrong=p:sub(1,13)..string.char(3)..p:sub(15);assert(not t:accept({id=0x010d,payload=wrong},0.2),'wrong command')
+  local err=p:sub(1,14)..string.char(3*8+5)..p:sub(16);assert(t:accept({id=0x010d,payload=err},0.3) and t.status=='DEVICE_ERROR','BAD_MAC terminal')
+  t=M.transaction(targets[1],0,8);assert(t:accept({id=0x050e,payload=''},0.1) and t.status=='RESET_CONTEXT_LOST','reset')
+  t=M.transaction(targets[1],0,8);assert(not t:accept({id=0x010d,payload=p},8) and t.status=='TIMEOUT','late valid ACK')
+  assert(not pcall(M.config,text..text),'duplicate config rejection')
+  assert(not pcall(M.config,text:gsub('11111111111111111111111111111111','00000000000000000000000000000000')),'zero key rejection')
+  print('SELFTEST_OK crc_vector fragmentation_all_splits bytewise malformed_crc length_bound resync partial_deadline concat correlation wrong_command timeout late_ack single_terminal device_error reset config_allowlist')
+end
+local function ffi_setup()
+  local ffi=require('ffi')
+  ffi.cdef[[
+    typedef struct { unsigned int iflag,oflag,cflag,lflag; unsigned char line; unsigned char cc[19]; } ct_termios;
+    typedef struct { long sec,nsec; } ct_time;
+    typedef struct { unsigned long ino; long off; unsigned short reclen; unsigned char type; char name[256]; } ct_dirent;
+    void *opendir(const char *); ct_dirent *readdir(void *); int closedir(void *);
+    long readlink(const char *,char *,unsigned long); int getpid(void);
+    int open(const char*,int,...); int close(int); long read(int,void*,unsigned long);
+    long write(int,const void*,unsigned long); int ioctl(int,unsigned long,...);
+    int usleep(unsigned int); int clock_gettime(int,ct_time*); int flock(int,int);
+  ]]
+  assert(ffi.os=='Linux' and ffi.arch=='arm' and ffi.sizeof('long')==4,'ARM Linux ABI required')
+  assert(ffi.sizeof('ct_termios')==36 and ffi.offsetof('ct_termios','cc')==17 and ffi.offsetof('ct_dirent','name')==11,'kernel ABI')
+  return ffi,ffi.C
+end
+-- Service backend: owns UART until close; coordinator owns daemon supervision.
+local abi_cache=nil
+local function ensure_abi()
+  if not abi_cache then abi_cache={ffi_setup()} end
+  return abi_cache[1],abi_cache[2]
+end
+function M.check_abi() ensure_abi();return true end
+-- Append this backend after the qualified codec and ABI declarations.
+function M.open_session(targets, now, path)
+  local ffi, C = ensure_abi()
+  local safe = require('config').safe
+  local self = {tty = -1, lock = -1, exclusive = false, ready = false, parser = M.parser(),
+    stage = 'stack', boot_deadline = now() + 20, last_boot_event = now()}
+  local buf = ffi.new('char[4096]')
+  local blank = ffi.cast('void *', 0)
+  local boot_marker = io.open('/proc/sys/kernel/random/boot_id', 'rb')
+  local boot_id = boot_marker and boot_marker:read('*l')
+  if boot_marker then boot_marker:close() end
+  local next_receipt_check = 0
+
+  function self:close()
+    local ok = true
+    if self.tty >= 0 then
+      if self.old then
+        local check = ffi.new('ct_termios[1]')
+        if C.ioctl(self.tty, 0x540b, ffi.cast('int', 0)) ~= 0
+          or C.ioctl(self.tty, 0x5402, self.old) ~= 0
+          or C.ioctl(self.tty, 0x5401, check) ~= 0
+          or ffi.string(check, 36) ~= ffi.string(self.old, 36) then
+          ok = false
+        end
+      end
+      if self.exclusive and C.ioctl(self.tty, 0x540d, blank) ~= 0 then ok = false end
+      if C.close(self.tty) ~= 0 then ok = false end
+      self.tty = -1
+    end
+    if self.lock >= 0 then C.close(self.lock); self.lock = -1 end
+    return ok
+  end
+
+  local ok = pcall(function()
+    self.lock = C.open('/run/ct/autonomous-uart.lock', 0xa0042, ffi.cast('int', 384))
+    assert(self.lock >= 0 and C.flock(self.lock, 6) == 0)
+    assert(safe.ct_uart_sole(path, -1) == 0)
+    self.tty = C.open(path, 0xa0902)
+    assert(self.tty >= 0)
+    assert(C.ioctl(self.tty, 0x540c, blank) == 0)
+    self.exclusive = true
+    assert(safe.ct_uart_sole(path, self.tty) == 0)
+    local old = ffi.new('ct_termios[1]')
+    assert(C.ioctl(self.tty, 0x5401, old) == 0)
+    self.old = old
+    local raw = ffi.new('ct_termios[1]')
+    raw[0].cflag = 0x18b2
+    assert(C.ioctl(self.tty, 0x5402, raw) == 0)
+    local check = ffi.new('ct_termios[1]')
+    assert(C.ioctl(self.tty, 0x5401, check) == 0 and ffi.string(check, 36) == ffi.string(raw, 36))
+  end)
+  if not ok then
+    local restored = self:close()
+    error(restored and 'UART_OPEN_FAILED' or 'UART_RESTORE_FAILED', 0)
+  end
+
+  -- The STM32 starts on its own at power-up and emits STACK_START before Linux opens
+  -- ttyS1 (first bank A boot, 19 November 2026). Like the OEM start mode, pulse PA2 once
+  -- while the UART is open, then wait for the fresh STACK_START.
+  if os.execute('luajit /usr/share/cozytouch/phase2/radio-start.lua') ~= 0 then
+    local restored = self:close()
+    error(restored and 'STM32_PULSE_FAILED' or 'UART_RESTORE_FAILED', 0)
+  end
+  self.boot_deadline, self.last_boot_event = now() + 20, now()
+
+  local function transmit(packet)
+    assert(safe.ct_uart_sole(path, self.tty) == 0, 'UART_OWNER_CHANGED')
+    local offset, deadline = 0, now() + 0.5
+    while offset < #packet do
+      assert(now() < deadline, 'UART_TX_TIMEOUT')
+      local sent = C.write(self.tty, packet:sub(offset + 1), #packet - offset)
+      if sent > 0 then
+        offset = offset + sent
+      elseif sent < 0 and ffi.errno() ~= 4 and ffi.errno() ~= 11 then
+        error('UART_WRITE_FAILED', 0)
+      else
+        C.usleep(1000)
+      end
+    end
+  end
+
+  function self:start(index)
+    assert(self.ready and not self.active, 'UART_STATE')
+    local target = assert(targets[index], 'UART_TARGET')
+    transmit(M.request(target))
+    local sent = now()
+    self.active = M.transaction(target, sent, sent + 8)
+    self.active.index = index
+  end
+
+  function self:step(stopping)
+    local n = C.read(self.tty, buf, 4096)
+    assert(n >= 0 or ffi.errno() == 4 or ffi.errno() == 11, 'UART_READ_FAILED')
+    local time = now()
+    local frames = self.parser:feed(n > 0 and ffi.string(buf, n) or '', time)
+    for _, item in ipairs(frames) do
+      local stack = item.id == 0x0403 and item.payload == '\4'
+      if item.id == 0x050e then
+        assert(self.stage == 'stack' and not self.boot_reset and #item.payload == 1, 'STM32_RESET')
+        self.boot_reset = true
+        self.last_boot_event = time
+      elseif stack then
+        assert(self.stage == 'stack' and not self.stack_seen, 'STM32_RESET')
+        self.stack_seen = true
+        self.last_boot_event = time
+        print('STACK_START observed')
+      elseif self.stage == 'revision' and item.id == 0x0500 then
+        assert(time < self.rev_deadline and #item.payload == 7 and item.payload:byte(1) == 0,
+          'STM32_REVISION_CORRELATION')
+        assert(item.payload == '\0v2.4.2', 'STM32_REVISION_MISMATCH')
+        self.stage, self.ready = 'ready', true
+        print('UART_READY revision=2.4.2')
+      elseif self.active then
+        self.active:accept(item, time)
+      end
+    end
+    if not stopping and self.stage == 'stack' then
+      assert(time < self.boot_deadline, 'STM32_STACK_TIMEOUT')
+      if not self.stack_seen and not self.boot_reset and boot_id and time >= next_receipt_check then
+        next_receipt_check = time + 0.25
+        local received, receipt = pcall(require('config').read, '/run/ct', 'stack-start-observed', 64)
+        if received and receipt == ('STACK_START ' .. boot_id .. '\n') then
+          self.stack_seen = true
+          self.last_boot_event = time
+          print('STACK_START passive_receipt')
+        end
+      end
+      if self.stack_seen and time - self.last_boot_event >= 0.35 and #self.parser.buf == 0 then
+        transmit(frame(0x0500, '\0'))
+        self.stage, self.rev_deadline = 'revision', now() + 3
+      end
+    elseif self.stage == 'revision' then
+      assert(time < self.rev_deadline, 'STM32_REVISION_TIMEOUT')
+    end
+    if self.active then
+      self.active:tick(now())
+      if self.active.done then
+        local result = self.active
+        self.active = nil
+        return result
+      end
+    end
+  end
+  return self
+end
+
+return M
+END

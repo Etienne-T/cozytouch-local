@@ -1,0 +1,12 @@
+#include "at91-kizboxmini-ram4.dts"
+#include "nand.dtsi"
+#include "leds.dtsi"
+/ {
+	model = "Overkiz Kizbox Mini durable A";
+	chosen {
+		/delete-property/ bootargs;
+		/delete-property/ linux,initrd-start;
+		/delete-property/ linux,initrd-end;
+	};
+};
+&nand_controller { nand@3 { nand-on-flash-bbt; }; };
