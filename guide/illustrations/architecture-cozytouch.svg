@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1244" width="1440" height="1244" role="img" aria-labelledby="ttl desc"><title id="ttl">Les deux architectures du bridge Cozytouch</title><desc id="desc">Comparaison du démarrage depuis la NAND et de la chaîne de pilotage radio entre le système constructeur et le système local.</desc><defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto-start-reverse"><path d="M0 0 7 3.5 0 7z" fill="#61757a"/></marker></defs>
+<rect x="0" y="0" width="1440" height="1244" rx="0" fill="#f7f6f0" stroke="none" stroke-width="1.5" />
+<text x="42" y="48" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#15353c" >Cozytouch 500090</text>
+<text x="42" y="82" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4e6568" >Du démarrage en NAND aux appareils io-homecontrol</text>
+<text x="1397" y="54" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="650" fill="#4d6265" text-anchor="end" letter-spacing="1.7">ARCHITECTURE DU BRIDGE</text>
+<rect x="35" y="111" width="674" height="1002" rx="16" fill="#fefdf9" stroke="#cbd2cb" stroke-width="1.5" />
+<text x="58" y="156" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="700" fill="#204b55" >Système constructeur</text>
+<text x="58" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#556968" >Configuration relevée le 17 novembre 2026</text>
+<rect x="53" y="211" width="638" height="348" rx="12" fill="#f5f4ed" stroke="#c7ccc4" stroke-width="1.5" />
+<text x="69" y="240" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="650" fill="#486367" letter-spacing="1.25">NAND   /   DÉMARRAGE DE L’AT91SAM9G25</text>
+<rect x="70" y="255" width="603" height="43" rx="7" fill="#fffefa" stroke="#cbd2cc" stroke-width="1.5" />
+<text x="87" y="283" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" fill="#25444c" >Bootstrap constructeur</text>
+<path d="M234 298v20" fill="none" stroke="#61757a" stroke-width="2.2"  marker-end="url(#arrow)"/>
+<path d="M544 298v20" fill="none" stroke="#61757a" stroke-width="2.2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+<rect x="70" y="323" width="341" height="72" rx="9" fill="#e8f0f0" stroke="#315e69" stroke-width="1.5" />
+<text x="84" y="352" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#204b55" >kboot constructeur</text>
+<text x="84" y="378" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#425c5e" >Linux 4.1.31 · initramfs</text>
+<rect x="427" y="323" width="246" height="72" rx="9" fill="#fffefa" stroke="#bdc7c3" stroke-width="1.5" />
+<text x="442" y="351" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="650" fill="#34525a" >kboot-spare</text>
+<text x="442" y="378" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#506567" >Copie constructeur</text>
+<path d="M238 395v15H210v25" fill="none" stroke="#61757a" stroke-width="2.2"  marker-end="url(#arrow)"/>
+<path d="M238 410H529v25" fill="none" stroke="#61757a" stroke-width="2.2"  marker-end="url(#arrow)"/>
+<rect x="272" y="399" width="211" height="23" rx="0" fill="#f5f4ed" stroke="none" stroke-width="1.5" />
+<text x="286" y="417" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="600" fill="#4a6468" >choix A/B · kexec</text>
+<rect x="70" y="439" width="292" height="101" rx="9" fill="#fffefa" stroke="#bfc9c4" stroke-width="1.5" />
+<text x="85" y="467" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700" fill="#385359" >Banque A · root / apps</text>
+<text x="85" y="496" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" fill="#233e47" >KizOS 2025.4.4-3</text>
+<text x="85" y="521" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#536769" >Linux 5.4.294</text>
+<rect x="381" y="439" width="292" height="101" rx="9" fill="#e8f0f0" stroke="#315e69" stroke-width="1.5" />
+<text x="396" y="467" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700" fill="#204b55" >Banque B · rootB / appsB</text>
+<text x="396" y="496" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" fill="#233e47" >KizOS 2026.1.3-2</text>
+<text x="396" y="521" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#536769" >Linux 5.4.302 · sélectionnée</text>
+<path d="M527 540v44" fill="none" stroke="#61757a" stroke-width="2.2"  marker-end="url(#arrow)"/>
+<rect x="70" y="589" width="603" height="77" rx="10" fill="#e8f0f0" stroke="#315e69" stroke-width="1.5" />
+<text x="87" y="620" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="650" fill="#204b55" >Application Cozytouch ↔ cloud Overkiz ↔ KizOS</text>
+<text x="87" y="647" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#465e63" >Pilotage constructeur via le service radio sous Linux</text>
+<path d="M215 676v38" stroke="#61757a" stroke-width="2.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="242" y="700" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#3c545b" >UART · trames MRIO · /dev/ttyS1</text>
+<rect x="70" y="722" width="603" height="66" rx="9" fill="#e4efeb" stroke="#9cb7ab" stroke-width="1.5" />
+<text x="87" y="751" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#254c44" >STM32F101RCT6</text>
+<text x="87" y="775" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#3b5a53" >Flash interne · firmware radio constructeur MRIO v2.4.2</text>
+<path d="M215 798v38" stroke="#61757a" stroke-width="2.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="242" y="822" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#3c545b" >SPI1 · commandes du Si4461 ¹</text>
+<rect x="70" y="845" width="603" height="65" rx="9" fill="#e4efeb" stroke="#9cb7ab" stroke-width="1.5" />
+<text x="87" y="874" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#254c44" >Silicon Labs Si4461</text>
+<text x="87" y="898" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#3b5a53" >Émetteur-récepteur radio</text>
+<path d="M215 920v38" stroke="#61757a" stroke-width="2.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="242" y="944" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#3c545b" >io-homecontrol · bande 868 MHz</text>
+<rect x="70" y="966" width="603" height="66" rx="9" fill="#fffefa" stroke="#afbfba" stroke-width="1.5" />
+<text x="87" y="996" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="650" fill="#284447" >Sauter Asama  +  chauffe-eau Calypso</text>
+<text x="87" y="1020" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#536968" >Appareils associés au bridge</text>
+<text x="70" y="1069" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#204b55" >Le pointeur du relevé désignait la banque B.</text>
+<text x="70" y="1095" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="400" fill="#536968" >La banque A contient également un système constructeur.</text>
+<rect x="730" y="111" width="674" height="1002" rx="16" fill="#fefdf9" stroke="#cbd2cb" stroke-width="1.5" />
+<text x="753" y="156" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="700" fill="#97442f" >Notre système local</text>
+<text x="753" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#556968" >Configuration vérifiée le 25 novembre 2026</text>
+<rect x="748" y="211" width="638" height="348" rx="12" fill="#f5f4ed" stroke="#c7ccc4" stroke-width="1.5" />
+<text x="764" y="240" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="650" fill="#486367" letter-spacing="1.25">NAND   /   DÉMARRAGE DE L’AT91SAM9G25</text>
+<rect x="765" y="255" width="603" height="43" rx="7" fill="#fffefa" stroke="#cbd2cc" stroke-width="1.5" />
+<text x="782" y="283" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" fill="#25444c" >Bootstrap constructeur</text>
+<path d="M929 298v20" fill="none" stroke="#61757a" stroke-width="2.2"  marker-end="url(#arrow)"/>
+<path d="M1239 298v20" fill="none" stroke="#61757a" stroke-width="2.2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+<rect x="765" y="323" width="341" height="72" rx="9" fill="#fae9dc" stroke="#a85237" stroke-width="1.5" />
+<text x="779" y="352" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#97442f" >kboot modifié · v3.14</text>
+<text x="779" y="378" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#425c5e" >Linux 4.1.31 · initramfs modifié</text>
+<rect x="1122" y="323" width="246" height="72" rx="9" fill="#fffefa" stroke="#bdc7c3" stroke-width="1.5" />
+<text x="1137" y="351" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="650" fill="#34525a" >kboot-spare</text>
+<text x="1137" y="378" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#506567" >Copie constructeur</text>
+<path d="M933 395v15H905v25" fill="none" stroke="#61757a" stroke-width="2.2"  marker-end="url(#arrow)"/>
+<path d="M933 410H1224v25" fill="none" stroke="#61757a" stroke-width="2.2"  marker-end="url(#arrow)"/>
+<rect x="967" y="399" width="211" height="23" rx="0" fill="#f5f4ed" stroke="none" stroke-width="1.5" />
+<text x="981" y="417" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="600" fill="#4a6468" >choix A/B · kexec</text>
+<rect x="765" y="439" width="292" height="101" rx="9" fill="#fae9dc" stroke="#a85237" stroke-width="1.5" />
+<text x="780" y="467" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700" fill="#97442f" >Banque A · root / apps</text>
+<text x="780" y="496" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" fill="#233e47" >Linux 6.12 · racine v4.2</text>
+<text x="780" y="521" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#536769" >Service local v8.11</text>
+<rect x="1076" y="439" width="292" height="101" rx="9" fill="#fffefa" stroke="#bfc9c4" stroke-width="1.5" />
+<text x="1091" y="467" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700" fill="#385359" >Banque B · rootB / appsB</text>
+<text x="1091" y="496" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" fill="#233e47" >Noyau KizOS 5.4.302</text>
+<text x="1091" y="521" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#536769" >Init de secours · accès SSH</text>
+<path d="M911 540v44" fill="none" stroke="#61757a" stroke-width="2.2"  marker-end="url(#arrow)"/>
+<rect x="765" y="589" width="603" height="77" rx="10" fill="#fae9dc" stroke="#a85237" stroke-width="1.5" />
+<text x="782" y="620" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="650" fill="#97442f" >Home Assistant ↔ courtier MQTT ↔ service local</text>
+<text x="782" y="647" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#465e63" >Pilotage sur le réseau local depuis la banque A</text>
+<path d="M910 676v38" stroke="#61757a" stroke-width="2.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="937" y="700" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#3c545b" >UART · trames MRIO · /dev/ttyS1</text>
+<rect x="765" y="722" width="603" height="66" rx="9" fill="#e4efeb" stroke="#9cb7ab" stroke-width="1.5" />
+<text x="782" y="751" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#254c44" >STM32F101RCT6</text>
+<text x="782" y="775" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#3b5a53" >Flash interne · firmware radio constructeur MRIO v2.4.2</text>
+<path d="M910 798v38" stroke="#61757a" stroke-width="2.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="937" y="822" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#3c545b" >SPI1 · commandes du Si4461 ¹</text>
+<rect x="765" y="845" width="603" height="65" rx="9" fill="#e4efeb" stroke="#9cb7ab" stroke-width="1.5" />
+<text x="782" y="874" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#254c44" >Silicon Labs Si4461</text>
+<text x="782" y="898" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#3b5a53" >Émetteur-récepteur radio</text>
+<path d="M910 920v38" stroke="#61757a" stroke-width="2.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="937" y="944" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#3c545b" >io-homecontrol · bande 868 MHz</text>
+<rect x="765" y="966" width="603" height="66" rx="9" fill="#fffefa" stroke="#afbfba" stroke-width="1.5" />
+<text x="782" y="996" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="650" fill="#284447" >Sauter Asama  +  chauffe-eau Calypso</text>
+<text x="782" y="1020" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#536968" >Appareils associés au bridge</text>
+<text x="765" y="1069" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#97442f" >Après deux démarrages de A sans acquittement,</text>
+<text x="765" y="1095" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="400" fill="#536968" >le démarrage suivant sélectionne le secours B.</text>
+<text x="42" y="1159" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#24424a" >Lecture</text>
+<text x="137" y="1159" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#425e62" >↓  Démarrage ou sélection de la banque       ↕  Échanges de données       ⇢  Repli si le format de kboot est invalide</text>
+<text x="42" y="1202" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#425e62" >¹  SPI1 observé dans le firmware constructeur exécuté sur banc QEMU. La liaison électrique SPI sur la carte reste à mesurer.</text>
+</svg>
