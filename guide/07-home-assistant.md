@@ -4,7 +4,7 @@ Le courtier et le compte dédié sont préparés avant le provisionnement en [fi
 
 1. Dans **Paramètres → Appareils et services**, ouvrez ou ajoutez l’intégration MQTT. Indiquez votre courtier et activez la découverte MQTT. Le nom des menus peut varier selon la version.
 2. Après le démarrage du service, ouvrez les appareils **Cozytouch CETHI** et **Cozytouch IC3** dans l’intégration MQTT. Contrôlez l’heure d’une mesure reçue pendant l’essai. Un ancien état conservé par le courtier ne valide pas le démarrage du jour.
-3. Vérifiez la version du service. Les observations ci-dessous datent du 20 novembre 2026. L’application v6 `v-f871bf800c8a` est active.
+3. Vérifiez la version du service. Les observations ci-dessous datent du 20 novembre 2026. La version active à cette date était la v6 `v-f871bf800c8a`. Le 25 novembre, la v8.11 pilotait aussi les deux appareils. Les séchages de 30, 60 et 120 min ont été confirmés par relecture radio et observation sur le sèche-serviettes. [Résultats par version](pilotage-et-recuperation.md)
 
 Le 20 novembre 2026, la présence des deux appareils Cozytouch dans Home Assistant a été vérifiée après le passage à la v6. Jusqu’à la v5, Home Assistant refusait la découverte MQTT. [Rapport v6](../analyse-2026-11-20/maj-lan-6/RAPPORT.md)
 

@@ -4,11 +4,11 @@ Ce parcours s’adresse au propriétaire d’un Atlantic 500090 qui sait mesurer
 
 **Avant d’ouvrir le boîtier**, prévoyez comment assurer le chauffage et l’eau chaude pendant l’intervention. Le hub participe à leur pilotage. Une erreur de câblage ou d’écriture peut rendre le bridge inutilisable. La banque B sert de secours si le chargeur, la NAND et la sélection de banque fonctionnent encore. Vous assumez l’intervention sur votre matériel.
 
-**Durée.** Les acquisitions et essais documentés couvrent les 17 au 20 novembre 2026. Le temps nécessaire à une seconde personne n’a pas été mesuré. Prévoyez plusieurs séances et une interruption dont la durée peut dépasser celle du montage.
+**Durée.** Les acquisitions et essais documentés couvrent les 17 au 25 novembre 2026. Le temps nécessaire à une seconde personne n’a pas été mesuré. Prévoyez plusieurs séances et une interruption dont la durée peut dépasser celle du montage.
 
 **Contextes radio à vérifier avant d’ouvrir le boîtier.** Le parcours couvre les appareils déjà associés pour lesquels vous disposez des contextes radio propres à votre installation. Vérifiez que vous pouvez identifier chaque cible et renseigner son entrée dans `targets.conf` au format attendu en fiche 06. Une sauvegarde NAND ou une connexion SSH réussie ne prouve pas que ces données sont disponibles. Si elles manquent, arrêtez ici. Aucun parcours d’association sur une seconde installation n’est validé.
 
-**Point d’arrêt avant la bascule en banque A.** Le retour applicatif change la version du service en A. La sélection de B dépend du chargeur et des volumes B intacts. Le scénario de récupération du pointeur B est simulé. Sans récupération matérielle qualifiée pour votre carte, gardez B sélectionnée. La restauration intégrale de la NAND reste non testée.
+**Point d’arrêt avant la bascule en banque A.** Le retour applicatif change la version du service en A. Sur notre carte, deux démarrages interrompus ont conduit au secours B. Un autre essai a vérifié la réécriture de la racine A depuis B. Avant de sélectionner A sur une autre carte, qualifiez son propre chemin de récupération. La restauration intégrale de la NAND reste non testée. [Versions et conditions des trois essais](10-secours-du-bridge.md)
 
 ~~~mermaid
 flowchart TD
@@ -40,4 +40,6 @@ Les mentions **vérifié** concernent un seul bridge à la date indiquée. Toute
 - [07 · Recevoir les mesures dans Home Assistant](07-home-assistant.md)
 - [08 · Mettre à jour ou revenir en arrière](08-mises-a-jour-et-retour.md)
 - [09 · S’arrêter au premier écart](09-depannage.md)
+- [10 · Récupérer la banque A depuis le secours B](10-secours-du-bridge.md)
+- [Article · Pilotage local et récupération après une panne](pilotage-et-recuperation.md)
 - [Sources et portée des preuves](REFERENCES.md)

@@ -6,7 +6,9 @@ Ce projet documente le bridge Atlantic 500090 (Overkiz Kizbox Mini) et les trava
 
 Le bridge associe un AT91SAM9G25, une NAND MX30LF1G18AC et un STM32F101RCT6 exécutant MRIO v2.4.2. Le STM32 pilote la radio Si4461 en 868 MHz.
 
-Le 19 novembre 2026, le système v4 a démarré en banque A sur Linux 6.12. La banque B conserve le KizOS d’origine. La sixième mise à jour par le réseau local, le 20 novembre 2026, a promu l’application v6 `v-f871bf800c8a`, désormais active. La v5 est la version précédente. [Rapport v6](analyse-2026-11-20/maj-lan-6/RAPPORT.md) Le service publie les lectures via MQTT. [Reconnaissance matérielle](RECHERCHE-REVERSE-2026-11-17.md) · [Écriture et démarrage v4](analyse-2026-11-19/ecriture-v4/PROCEDURE.md)
+Le 19 novembre 2026, le système v4 a démarré en banque A sur Linux 6.12. La banque B conserve le KizOS d’origine. La sixième mise à jour par le réseau local, le 20 novembre 2026, a promu l’application v6 `v-f871bf800c8a`, alors active. La v5 était la version précédente. [Rapport v6](analyse-2026-11-20/maj-lan-6/RAPPORT.md) Le service publie les lectures via MQTT. [Reconnaissance matérielle](RECHERCHE-REVERSE-2026-11-17.md) · [Écriture et démarrage v4](analyse-2026-11-19/ecriture-v4/PROCEDURE.md)
+
+Le 25 novembre 2026, le bridge exécutait la racine v4.2 et l’application v8.11. Le pilotage depuis Home Assistant et la réparation de A depuis le secours B ont été vérifiés sur ce matériel. [Article · Piloter deux appareils et récupérer le bridge après une panne](guide/pilotage-et-recuperation.md)
 
 ## Chronologie
 

@@ -2,7 +2,7 @@
 
 ## Changer uniquement l’application
 
-Le 20 novembre 2026, la mise à jour en banque A a promu l’application v6 `v-f871bf800c8a` (`ct-20261120f.ctapp`). Cette version est active. La v5 `v-a581179dd120` est la version précédente. [Rapport v6](../analyse-2026-11-20/maj-lan-6/RAPPORT.md)
+Le 20 novembre 2026, la mise à jour en banque A a promu l’application v6 `v-f871bf800c8a` (`ct-20261120f.ctapp`). La v5 `v-a581179dd120` occupait alors la position précédente. Le 25 novembre, la v8.11 était active et la v8.7 occupait la position précédente. [Rapport v6](../analyse-2026-11-20/maj-lan-6/RAPPORT.md)
 
 Le 20 novembre 2026, la présence des deux appareils Cozytouch dans Home Assistant a été vérifiée après le passage à la v6. Jusqu’à la v5, Home Assistant refusait la découverte MQTT.
 
@@ -13,7 +13,7 @@ Le 20 novembre 2026, la présence des deux appareils Cozytouch dans Home Assista
 
 ## Revenir au système constructeur
 
-Le retour à B sélectionne la paire rootB/appsB conservée sur le bridge. Il exige une paire B intacte, un pointeur lisible et un chargeur fonctionnel. Contrôlez la banque réellement montée après un démarrage à froid. Vérifiez séparément les services nécessaires. Le [scénario de récupération du pointeur](../analyse-2026-11-18/restauration-pointeur-jtag/PROCEDURE.md) décrit aussi les limites de sa simulation. Une simulation ne prouve pas la tenue après coupure.
+Avec le chargeur constructeur, la sélection de B lance la paire rootB/appsB si elle est intacte. Avec le kboot v3.14 essayé sur notre bridge, la sélection de B lance un environnement de réparation. Il utilise le noyau de B et sa propre initialisation. Pour un retour au système constructeur, il faut aussi rétablir son chemin de démarrage et vérifier le système obtenu. [Secours et portée des essais](10-secours-du-bridge.md) · [Simulation historique du pointeur](../analyse-2026-11-18/restauration-pointeur-jtag/PROCEDURE.md)
 
 ## Restaurer toute la NAND
 
